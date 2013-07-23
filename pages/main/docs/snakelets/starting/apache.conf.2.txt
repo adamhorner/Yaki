@@ -1,6 +1,6 @@
 <VirtualHost snakelets.host.domain>
   ServerName snakelets.host.domain
   ProxyRequests Off 
-  ProxyPass / http://localhost:9080/
-  ProxyPassReverse / http://localhost:9080/
+  ProxyPass / http://localhost:9090/
+  ProxyPassReverse / http://localhost:9090/
 </VirtualHost>

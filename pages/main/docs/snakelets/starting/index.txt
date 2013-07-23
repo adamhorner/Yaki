@@ -18,28 +18,30 @@ It is possible to start the Snakelets server out-of-the-box without changing any
 
 [Yaki][y] runs as the main app (named `ROOT`), which is used as the web application for the root context '/'. 
 
-You can just start the `app.py` script without configuring anything, and it will launch Snakelets and [Yaki][y] on port 9080, making it available to you alone on `http://127.0.0.1:9080/`.
+You can just start the `app.py` script without configuring anything, and it will launch Snakelets and [Yaki][y] on port 9090, making it available to you alone on `http://127.0.0.1:9090/`.
 
 > A number of web apps that originally shipped with Snakelets are available under `webapps.disabled` for your perusal.
 
-## Apache ##
+## Web Server ##
 
-...is not needed: Snakelets contains its own multithreaded web server. But if you still want to use [Apache][a], [lighttpd][l] or [nginx][n], you can use `mod_proxy` or its equivalent for forwarding requests to a running Snakelets server behind it (which is the recommended configuration, since you may need to run additional services).
+Another web server is not needed: Snakelets contains its own multithreaded web server. But if you still want to use [Apache][a], [lighttpd][l] or [nginx][n], you can use `mod_proxy` or its equivalent for forwarding requests to a running Snakelets server behind it (which is the recommended configuration, since you may need to run additional services).
+
+### Apache ###
 
 Edit your Apache config file. Make sure that `mod_proxy` is loaded in the `LoadModule` section. <br />
 Configure the forwarding to the Snakelets server:
 
 <pre src="apache.conf.1.txt"></pre>
 
-This example forwards all requests starting with `/snake/` to Snakelets. You can also configure a dedicated virtual host, for example: 
+This example forwards all requests starting with `/snake/` to Snakelets. To make sure Snakelets understands this when it generates URLs internally, you should call `app.py` with something like:
+
+<pre src="app.py.txt" syntax="sh"></pre>
+
+You can also configure a dedicated virtual host, for example: 
 
 <pre src="apache.conf.2.txt"></pre>
 
-Now __all__ requests to this hostname will be passed to Snakelets. To make sure Snakelets understands this when it generates URLs internally, you should edit `app.py` to read:
-
-<pre src="app.py.txt" syntax="python"></pre>
-
-If you use the virtualhost mapping, the `serverURLprefix` should be set to an empty string.
+Now __all__ requests to this hostname will be passed to Snakelets. If you use the virtualhost mapping, the `serverURLprefix` (above) should be set to an empty string.
 
 Finally, if you are using `mod_cache`, you should tell it to __not cache__ Snakelets urls, which can be done by the following:
 

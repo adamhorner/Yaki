@@ -15,7 +15,7 @@ $HTTP["host"] =~ "^(((the|www).)?domain.com)$" {
 ## the actual proxy entry
 
     $HTTP["url"] =~ "^/*" {
-      proxy.server  = ( "" => ( ( "host" => "127.0.0.1", "port" => 9080 ) ) )
+      proxy.server  = ( "" => ( ( "host" => "127.0.0.1", "port" => 9090 ) ) )
     }
 
 ## a few sample redirects that usually come in handy

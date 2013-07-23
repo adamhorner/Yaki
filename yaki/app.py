@@ -9,19 +9,20 @@ import getopt # we're not going to use argparse to maintain pre-2.7 compatibilit
 #gc.set_debug(gc.DEBUG_LEAK)
 
 def usage():
-  print """Usage: %s [--debug][--bind=<ip>][--port=<num>][--external-port=<num>][--workdir=<path>]""" % sys.argv[1]
+  print """Usage: %s [--debug][--bind=<ip>][--port=<num>][--external-port=<num>][--workdir=<path>][--server-url-prefix=<path>]""" % sys.argv[1]
 
 def main():
   HTTPD_PORT = 9090
   HTTPD_IP = '127.0.0.1'
   HTTPD_EXTERNAL_PORT = 9090
+  SERVER_URL_PREFIX = ''
   RUNAS_USER = None # "www"
   RUNAS_GROUP = None # "www"
   WORKDIR = None
   DEBUG = False
 
   try:
-    opts, args = getopt.getopt(sys.argv[1:], "", ["debug", "workdir=", "bind=", "port=", "external-port="])
+    opts, args = getopt.getopt(sys.argv[1:], "", ["debug", "workdir=", "bind=", "port=", "external-port=", "server-url-prefix="])
   except getopt.GetoptError, err:
     print str(err)
     usage()
@@ -35,6 +36,8 @@ def main():
       HTTPD_PORT = int(a)
     elif o in ("-e", "--external-port"):
       HTTPD_EXTERNAL_PORT = int(a)
+    elif o in ("-up", "--server-url-prefix"):
+      SERVER_URL_PREFIX = a
     elif o in ("-w", "--workdir"):
       WORKDIR = a
     elif o in ("-d", "--debug"):
@@ -45,14 +48,14 @@ def main():
   if WORKDIR:
     os.chdir(WORKDIR)
 
-  print >>sys.stderr,"%s GMT Starting server on %s:%d (%d)" % (time.asctime(time.gmtime()), HTTPD_IP, HTTPD_PORT, HTTPD_EXTERNAL_PORT)
+  print >>sys.stderr,"%s GMT Starting server on %s:%d (%d:%s)" % (time.asctime(time.gmtime()), HTTPD_IP, HTTPD_PORT, HTTPD_EXTERNAL_PORT, SERVER_URL_PREFIX)
 
   # TODO: move more of these to getopt above
   snakeserver.server.main(
     HTTPD_PORT=HTTPD_PORT,
     bindname=HTTPD_IP,
     externalPort=HTTPD_EXTERNAL_PORT,
-    serverURLprefix='',
+    serverURLprefix=SERVER_URL_PREFIX,
     debugRequests=DEBUG,
     precompileYPages=True,
     writePageSource=False,
