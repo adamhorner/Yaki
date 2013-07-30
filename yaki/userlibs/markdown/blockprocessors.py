@@ -1,22 +1,25 @@
 """
 CORE MARKDOWN BLOCKPARSER
-=============================================================================
+===========================================================================
 
 This parser handles basic parsing of Markdown blocks.  It doesn't concern itself
-with inline elements such as **bold** or *italics*, but rather just catches 
+with inline elements such as **bold** or *italics*, but rather just catches
 blocks, lists, quotes, etc.
 
-The BlockParser is made up of a bunch of BlockProssors, each handling a 
+The BlockParser is made up of a bunch of BlockProssors, each handling a
 different type of block. Extensions may add/replace/remove BlockProcessors
 as they need to alter how markdown blocks are parsed.
-
 """
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import unicode_literals
+import logging
 import re
-import util
-from blockparser import BlockParser
-from logging import CRITICAL
-from md_logging import message
+from . import util
+from .blockparser import BlockParser
+
+logger =  logging.getLogger('MARKDOWN')
 
 
 def build_block_parser(md_instance, **kwargs):
@@ -300,6 +303,13 @@ class OListProcessor(BlockProcessor):
     CHILD_RE = re.compile(r'^[ ]{0,3}((\d+\.)|[*+-])[ ]+(.*)')
     # Detect indented (nested) items of either type
     INDENT_RE = re.compile(r'^[ ]{4,7}((\d+\.)|[*+-])[ ]+.*')
+    # The integer (python string) with which the lists starts (default=1)
+    # Eg: If list is intialized as)
+    #   3. Item
+    # The ol tag will get starts="3" attribute
+    STARTSWITH = '1'
+    # List of allowed sibling tags. 
+    SIBLING_TAGS = ['ol', 'ul']
 
     def test(self, parent, block):
         return bool(self.RE.match(block))
@@ -309,7 +319,7 @@ class OListProcessor(BlockProcessor):
         items = self.get_items(blocks.pop(0))
         sibling = self.lastChild(parent)
 
-        if sibling and sibling.tag in ['ol', 'ul']:
+        if sibling and sibling.tag in self.SIBLING_TAGS:
             # Previous block was a list item, so set that as parent
             lst = sibling
             # make sure previous item is in a p- if the item has text, then it
@@ -322,6 +332,13 @@ class OListProcessor(BlockProcessor):
                 p.text = lst[-1].text
                 lst[-1].text = ''
                 lst[-1].insert(0, p)
+            # if the last item has a tail, then the tail needs to be put in a p
+            # likely only when a header is not followed by a blank line
+            lch = self.lastChild(lst[-1])
+            if lch is not None and lch.tail:
+                p = util.etree.SubElement(lst[-1], 'p')
+                p.text = lch.tail.lstrip()
+                lch.tail = ''
 
             # parse first block differently as it gets wrapped in a p.
             li = util.etree.SubElement(lst, 'li')
@@ -339,6 +356,10 @@ class OListProcessor(BlockProcessor):
         else:
             # This is a new list so create parent with appropriate tag.
             lst = util.etree.SubElement(parent, self.TAG)
+            # Check if a custom start integer is set
+            if not self.parser.markdown.lazy_ol and self.STARTSWITH !='1':
+                lst.attrib['start'] = self.STARTSWITH
+
         self.parser.state.set('list')
         # Loop through items in block, recursively parsing each with the
         # appropriate parent.
@@ -358,7 +379,13 @@ class OListProcessor(BlockProcessor):
         for line in block.split('\n'):
             m = self.CHILD_RE.match(line)
             if m:
-                # This is a new item. Append
+                # This is a new list item
+                # Check first item for the start index
+                if not items and self.TAG=='ol':
+                    # Detect the integer value of first list item
+                    INTEGER_RE = re.compile('(\d+)')
+                    self.STARTSWITH = INTEGER_RE.match(m.group(1)).group()
+                # Append to the list
                 items.append(m.group(3))
             elif self.INDENT_RE.match(line):
                 # This is an indented (possibly nested) item.
@@ -408,14 +435,14 @@ class HashHeaderProcessor(BlockProcessor):
                 blocks.insert(0, after)
         else:
             # This should never happen, but just in case...
-            message(CRITICAL, "We've got a problem header!")
+            logger.warn("We've got a problem header: %r" % block)
 
 
 class SetextHeaderProcessor(BlockProcessor):
     """ Process Setext-style Headers. """
 
     # Detect Setext-style header. Must be first 2 lines of block.
-    RE = re.compile(r'^.*?\n[=-]{3,}', re.MULTILINE)
+    RE = re.compile(r'^.*?\n[=-]+[ ]*(\n|$)', re.MULTILINE)
 
     def test(self, parent, block):
         return bool(self.RE.match(block))
@@ -437,58 +464,60 @@ class SetextHeaderProcessor(BlockProcessor):
 class HRProcessor(BlockProcessor):
     """ Process Horizontal Rules. """
 
-    RE = r'[ ]{0,3}(?P<ch>[*_-])[ ]?((?P=ch)[ ]?){2,}[ ]*'
+    RE = r'^[ ]{0,3}((-+[ ]{0,2}){3,}|(_+[ ]{0,2}){3,}|(\*+[ ]{0,2}){3,})[ ]*'
     # Detect hr on any line of a block.
-    SEARCH_RE = re.compile(r'(^|\n)%s(\n|$)' % RE)
-    # Match a hr on a single line of text.
-    MATCH_RE = re.compile(r'^%s$' % RE)
+    SEARCH_RE = re.compile(RE, re.MULTILINE)
 
     def test(self, parent, block):
-        return bool(self.SEARCH_RE.search(block))
-
-    def run(self, parent, blocks):
-        lines = blocks.pop(0).split('\n')
-        prelines = []
-        # Check for lines in block before hr.
-        for line in lines:
-            m = self.MATCH_RE.match(line)
-            if m:
-                break
-            else:
-                prelines.append(line)
-        if len(prelines):
-            # Recursively parse lines before hr so they get parsed first.
-            self.parser.parseBlocks(parent, ['\n'.join(prelines)])
-        # create hr
-        hr = util.etree.SubElement(parent, 'hr')
-        # check for lines in block after hr.
-        lines = lines[len(prelines)+1:]
-        if len(lines):
-            # Add lines after hr to master blocks for later parsing.
-            blocks.insert(0, '\n'.join(lines))
-
-
-class EmptyBlockProcessor(BlockProcessor):
-    """ Process blocks and start with an empty line. """
-
-    # Detect a block that only contains whitespace 
-    # or only whitespace on the first line.
-    RE = re.compile(r'^\s*\n')
-
-    def test(self, parent, block):
-        return bool(self.RE.match(block))
+        m = self.SEARCH_RE.search(block)
+        # No atomic grouping in python so we simulate it here for performance.
+        # The regex only matches what would be in the atomic group - the HR.
+        # Then check if we are at end of block or if next char is a newline.
+        if m and (m.end() == len(block) or block[m.end()] == '\n'):
+            # Save match object on class instance so we can use it later.
+            self.match = m
+            return True
+        return False
 
     def run(self, parent, blocks):
         block = blocks.pop(0)
-        m = self.RE.match(block)
-        if m:
-            # Add remaining line to master blocks for later.
-            blocks.insert(0, block[m.end():])
-            sibling = self.lastChild(parent)
-            if sibling and sibling.tag == 'pre' and sibling[0] and \
-                    sibling[0].tag == 'code':
-                # Last block is a codeblock. Append to preserve whitespace.
-                sibling[0].text = util.AtomicString('%s/n/n/n' % sibling[0].text )
+        # Check for lines in block before hr.
+        prelines = block[:self.match.start()].rstrip('\n')
+        if prelines:
+            # Recursively parse lines before hr so they get parsed first.
+            self.parser.parseBlocks(parent, [prelines])
+        # create hr
+        util.etree.SubElement(parent, 'hr')
+        # check for lines in block after hr.
+        postlines = block[self.match.end():].lstrip('\n')
+        if postlines:
+            # Add lines after hr to master blocks for later parsing.
+            blocks.insert(0, postlines)
+
+
+
+class EmptyBlockProcessor(BlockProcessor):
+    """ Process blocks that are empty or start with an empty line. """
+
+    def test(self, parent, block):
+        return not block or block.startswith('\n')
+
+    def run(self, parent, blocks):
+        block = blocks.pop(0)
+        filler = '\n\n'
+        if block:
+            # Starts with empty line
+            # Only replace a single line.
+            filler = '\n'
+            # Save the rest for later.
+            theRest = block[1:]
+            if theRest:
+                # Add remaining lines to master blocks for later.
+                blocks.insert(0, theRest)
+        sibling = self.lastChild(parent)
+        if sibling and sibling.tag == 'pre' and len(sibling) and sibling[0].tag == 'code':
+            # Last block is a codeblock. Append to preserve whitespace.
+            sibling[0].text = util.AtomicString('%s%s' % (sibling[0].text, filler))
 
 
 class ParagraphProcessor(BlockProcessor):
@@ -502,11 +531,27 @@ class ParagraphProcessor(BlockProcessor):
         if block.strip():
             # Not a blank block. Add to parent, otherwise throw it away.
             if self.parser.state.isstate('list'):
-                # The parent is a tight-list. Append to parent.text
-                if parent.text:
-                    parent.text = '%s\n%s' % (parent.text, block)
+                # The parent is a tight-list.
+                #
+                # Check for any children. This will likely only happen in a 
+                # tight-list when a header isn't followed by a blank line.
+                # For example:
+                #
+                #     * # Header
+                #     Line 2 of list item - not part of header.
+                sibling = self.lastChild(parent)
+                if sibling is not None:
+                    # Insetrt after sibling.
+                    if sibling.tail:
+                        sibling.tail = '%s\n%s' % (sibling.tail, block)
+                    else:
+                        sibling.tail = '\n%s' % block
                 else:
-                    parent.text = block.lstrip()
+                    # Append to parent.text
+                    if parent.text:
+                        parent.text = '%s\n%s' % (parent.text, block)
+                    else:
+                        parent.text = block.lstrip()
             else:
                 # Create a regular paragraph
                 p = util.etree.SubElement(parent, 'p')

@@ -1,7 +1,8 @@
-import re
-import inlinepatterns
-import util
-import odict
+from __future__ import unicode_literals
+from __future__ import absolute_import
+from . import util
+from . import odict
+from . import inlinepatterns
 
 
 def build_treeprocessors(md_instance, **kwargs):
@@ -15,17 +16,11 @@ def build_treeprocessors(md_instance, **kwargs):
 def isString(s):
     """ Check if it's string """
     if not isinstance(s, util.AtomicString):
-        return isinstance(s, basestring)
+        return isinstance(s, util.string_type)
     return False
 
 
-class Processor:
-    def __init__(self, markdown_instance=None):
-        if markdown_instance:
-            self.markdown = markdown_instance
-
-
-class Treeprocessor(Processor):
+class Treeprocessor(util.Processor):
     """
     Treeprocessors are run on the ElementTree object before serialization.
 
@@ -56,8 +51,7 @@ class InlineProcessor(Treeprocessor):
         self.__placeholder_suffix = util.ETX
         self.__placeholder_length = 4 + len(self.__placeholder_prefix) \
                                       + len(self.__placeholder_suffix)
-        self.__placeholder_re = \
-                            re.compile(util.INLINE_PLACEHOLDER % r'([0-9]{4})')
+        self.__placeholder_re = util.INLINE_PLACEHOLDER_RE
         self.markdown = md
 
     def __makePlaceholder(self, type):
@@ -290,29 +284,41 @@ class InlineProcessor(Treeprocessor):
                                                     text), child)
                     stack += lst
                     insertQueue.append((child, lst))
-
+                if child.tail:
+                    tail = self.__handleInline(child.tail)
+                    dumby = util.etree.Element('d')
+                    tailResult = self.__processPlaceholders(tail, dumby)
+                    if dumby.text:
+                        child.tail = dumby.text
+                    else:
+                        child.tail = None
+                    pos = currElement.getchildren().index(child) + 1
+                    tailResult.reverse()
+                    for newChild in tailResult:
+                        currElement.insert(pos, newChild)
                 if child.getchildren():
                     stack.append(child)
 
-            if self.markdown.enable_attributes:
-                for element, lst in insertQueue:
-                    if element.text:
+            for element, lst in insertQueue:
+                if self.markdown.enable_attributes:
+                    if element.text and isString(element.text):
                         element.text = \
                             inlinepatterns.handleAttributes(element.text, 
                                                                     element)
-                    i = 0
-                    for newChild in lst:
+                i = 0
+                for newChild in lst:
+                    if self.markdown.enable_attributes:
                         # Processing attributes
-                        if newChild.tail:
+                        if newChild.tail and isString(newChild.tail):
                             newChild.tail = \
                                 inlinepatterns.handleAttributes(newChild.tail,
                                                                     element)
-                        if newChild.text:
+                        if newChild.text and isString(newChild.text):
                             newChild.text = \
                                 inlinepatterns.handleAttributes(newChild.text,
                                                                     newChild)
-                        element.insert(i, newChild)
-                        i += 1
+                    element.insert(i, newChild)
+                    i += 1
         return tree
 
 
@@ -347,3 +353,8 @@ class PrettifyTreeprocessor(Treeprocessor):
                 br.tail = '\n'
             else:
                 br.tail = '\n%s' % br.tail
+        # Clean up extra empty lines at end of code blocks.
+        pres = root.getiterator('pre')
+        for pre in pres:
+            if len(pre) and pre[0].tag == 'code':
+                pre[0].text = pre[0].text.rstrip() + '\n'
