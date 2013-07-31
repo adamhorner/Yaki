@@ -23,7 +23,7 @@ except ImportError:
 # helper functions for rendering
 
 def _markdown(buffer):
-  return markdown.Markdown(extensions=['extra','toc','smartypants','codehilite','meta'], safe_mode=False).convert(buffer)
+  return markdown.Markdown(extensions=['extra','toc','smartypants','meta'], safe_mode=False).convert(buffer)
 
 def _plaintext(buffer):
   return u'<pre>\n%s</pre>' % buffer
