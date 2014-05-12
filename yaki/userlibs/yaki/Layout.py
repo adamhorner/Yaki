@@ -59,7 +59,10 @@ def renderEntryMetaData(i18n, headers, short = True):
       updated = format % (i18n['Updated'],plainTime(i18n, headers['last-modified'], True))
     author = format % (i18n['By'],headers['from'])
     try:
-      tags = format % (i18n['Tags'],headers['tags'].lower())
+      tags = [tag.strip() for tag in headers['tags'].lower().split(",")]
+      tags.sort()
+      tags = filter(lambda x: len(x),tags) 
+      tags = ' '.join(['<span class="label">%s</span>' % tag for tag in tags])
     except KeyError:
       # some entries might be untagged
       pass
